@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Rating System · Custom Model Edition</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body data-theme="mint">
+
+    <div id="star-field" aria-hidden="true"></div>
+    <div class="background-shapes" aria-hidden="true">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"><path d="M50 0 L100 100 L0 100 Z" /></svg>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"><circle cx="50" cy="50" r="50"/></svg>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"><rect width="100" height="100"/></svg>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"><polygon points="50,0 100,50 50,100 0,50" /></svg>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"><path d="M0,50 a1,1 0 0,0 100,0" /></svg>
+    </div>
+
+    <div class="theme-switcher">
+        <button id="theme-toggle-btn" class="theme-btn" aria-label="Toggle theme menu" aria-haspopup="true" aria-expanded="false">🎨</button>
+        <div class="theme-options" role="radiogroup" aria-labelledby="theme-label">
+            <span id="theme-label" class="hidden">Select Theme</span>
+            <button class="theme-btn" data-theme="mint" aria-label="Mint theme" role="radio" aria-checked="true">🌿</button>
+            <button class="theme-btn" data-theme="lemon" aria-label="Lemon theme" role="radio" aria-checked="false">🍋</button>
+            <button class="theme-btn" data-theme="starry" aria-label="Starry theme" role="radio" aria-checked="false">✨</button>
+            <button class="theme-btn" data-theme="klein-blue" aria-label="Klein Blue theme" role="radio" aria-checked="false">🟦</button>
+            <button class="theme-btn" data-theme="misty-peak" aria-label="Misty Peak theme" role="radio" aria-checked="false">🌫️</button>
+        </div>
+    </div>
+
+    <main class="container">
+        <header>
+            <h1>AI Rating System</h1>
+            <p class="subtitle">Upload an image and let the AI judge its smashability</p>
+        </header>
+
+        <section class="disclaimer" id="disclaimer">
+            <button class="close-btn" id="close-disclaimer" aria-label="Close disclaimer">×</button>
+            <p>⚠️ <strong>Disclaimer:</strong> Just for fun. The AI judges based on appearance only; don't take it seriously! Avoid using your own photos; if you fear being criticized, skip it. Aesthetics are subjective!</p>
+        </section>
+
+        <details class="api-settings-details">
+            <summary>API Configuration</summary>
+            <div class="api-key-container">
+                <p><strong>API Provider</strong></p>
+                <div class="api-key-input-wrapper">
+                    <select id="api-provider-select">
+                        <option value="custom">Custom</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="siliconflow">Siliconflow</option>
+                        <option value="xai">xAI</option>
+                    </select>
+                </div>
+
+                <p><strong>API Key</strong></p>
+                <div class="api-key-input-wrapper">
+                    <input type="password" id="api-key-input" placeholder="Enter your API Key here">
+                    <button id="toggle-key-visibility" class="key-visibility-toggle">👁️</button>
+                </div>
+
+                <p><strong>API Base URL</strong></p>
+                <div class="api-key-input-wrapper">
+                    <input type="text" id="api-base-url" placeholder="Selecting a provider may auto-fill">
+                </div>
+
+                <p><strong>Model Name</strong></p>
+                <div class="api-key-input-wrapper model-input-wrapper">
+                    <select id="api-model-select"></select>
+                    <input type="text" id="api-model-input" class="hidden" placeholder="Enter custom model name">
+                    <button id="fetch-models-btn" class="btn btn-secondary">Fetch Models</button>
+                </div>
+
+                <div class="form-control toggle-switch">
+                    <span>Enable AI Judgement Seal</span>
+                    <label class="switch">
+                        <input type="checkbox" id="seal-enabled-checkbox" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <button id="save-key-btn" class="btn">Save Settings</button>
+                <p id="key-status" class="key-status"></p>
+            </div>
+        </details>
+
+        <section class="prompt-selector">
+            <div class="prompt-selection-ui">
+                <select id="prompt-select"></select>
+                <button id="manage-prompts-btn" class="btn btn-secondary">Prompt Management</button>
+            </div>
+             <div class="ai-type-options">
+                <label class="ai-type-option">
+                    <input type="radio" name="ai-type" value="brief" checked>
+                    <span>Brief Mode</span>
+                    <span class="ai-type-desc">Short and snappy, 1-2 sentences, enough impact</span>
+                </label>
+                <label class="ai-type-option">
+                    <input type="radio" name="ai-type" value="descriptive">
+                    <span>Detailed Mode</span>
+                    <span class="ai-type-desc">Elaborate, 3+ sentences, more stimulating</span>
+                </label>
+                <label class="ai-type-option">
+                    <input type="radio" name="ai-type" value="novel">
+                    <span>Novel Mode</span>
+                    <span class="ai-type-desc">400+ characters, purely hardcore</span>
+                </label>
+            </div>
+        </section>
+
+        <div class="upload-area" id="upload-area" role="button" tabindex="0" aria-label="Click or drag image to this area to upload">
+            <div class="upload-inner">
+                 <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                <p>Drag image here, or<span class="upload-btn"> click to upload</span></p>
+                <p class="paste-hint">You can also paste an image directly (Ctrl+V)</p>
+            </div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" class="hidden" aria-hidden="true">
+
+        <section id="preview-container" class="hidden">
+            <div class="image-preview-container">
+                <img id="preview-image" src="" alt="Image Preview">
+            </div>
+            <div class="preview-actions">
+                <button id="start-analysis-btn" class="btn">🚀 Start Analysis</button>
+                <button id="clear-selection-btn" class="btn btn-secondary">❌ Clear Selection</button>
+            </div>
+        </section>
+
+        <section id="result-container" class="hidden" aria-live="polite">
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p id="loading-text">AI is scrutinizing every pixel...</p>
+                <div class="progress-bar-container">
+                    <div class="progress-bar"></div>
+                </div>
+            </div>
+            <article id="result" class="hidden">
+                <div id="result-seal" class="seal-container hidden"></div>
+                <img id="result-image-thumbnail" src="" alt="Result Thumbnail" class="result-image-thumbnail">
+                <div class="verdict-container">
+                    <span id="verdict-icon"></span>
+                    <h2 id="verdict"></h2>
+                </div>
+                <p id="explanation"></p>
+		<p>Click on the picture to load a new one.</p>
+                <div class="result-actions">
+                   <button id="try-again-btn" class="btn btn-secondary">🔄 Try Again with this picture</button>
+               </div>
+            </article>
+        </section>
+        
+        <button id="view-saved-btn" class="btn view-saved-btn">📂 View My Records</button>
+    </main>
+
+    <div id="saved-results-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="saved-title">
+        <div class="saved-results-panel">
+            <button id="close-saved-btn" class="close-btn" aria-label="Close saved results">×</button>
+            <h2 id="saved-title">My Records</h2>
+            <div class="saved-controls">
+                <input type="text" id="search-saved" placeholder="Search explanation text..." aria-label="Search saved results">
+                <select id="filter-saved" aria-label="Filter results category">
+                    <option value="all">All Categories</option>
+                    <option value="SMASH">Show only "Smash"</option>
+                    <option value="PASS">Show only "Pass"</option>
+                </select>
+            </div>
+            <div id="saved-results-grid"></div>
+            <div id="pagination-controls" class="pagination-controls"></div>
+        </div>
+    </div>
+
+    <div id="popup-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="popup-verdict">
+        <div class="popup-card" id="popup-card-content">
+            <button class="close-popup close-btn" aria-label="Close popup">×</button>
+            <div class="seal-container hidden"></div>
+            <img id="popup-img" src="" alt="Preview Image">
+            <h3 id="popup-verdict"></h3>
+            <p id="popup-explanation"></p>
+            <div class="popup-actions">
+                <button id="share-from-popup-btn" class="btn">🖼️ Generate Share Image</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="prompt-manager-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-manager-title">
+        <div class="prompt-manager-panel">
+            <button id="close-prompt-manager-btn" class="close-btn" aria-label="Close prompt manager">×</button>
+            <h2 id="prompt-manager-title">Prompt Management</h2>
+            <div class="prompt-manager-content">
+                <div class="prompt-list-container">
+                    <ul id="prompt-list"></ul>
+                    <div class="prompt-list-actions">
+                        <button id="import-prompts-btn" class="btn btn-secondary">Import</button>
+                        <button id="export-prompts-btn" class="btn btn-secondary">Export</button>
+                        <button id="add-prompt-btn" class="btn">New</button>
+                    </div>
+                    <input type="file" id="import-prompts-input" class="hidden" accept=".json">
+                </div>
+                <div id="prompt-editor" class="hidden">
+                    <input type="text" id="prompt-name-input" placeholder="Prompt Group Name">
+                    <h3>Brief Mode</h3>
+                    <textarea id="prompt-brief-input"></textarea>
+                    <h3>Detailed Mode</h3>
+                    <textarea id="prompt-descriptive-input"></textarea>
+                    <h3>Novel Mode</h3>
+                    <textarea id="prompt-novel-input"></textarea>
+                    <div class="prompt-editor-actions">
+                        <button id="save-prompt-btn" class="btn">Save</button>
+                        <button id="cancel-prompt-btn" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="share-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-title">
+        <div class="share-panel">
+            <button id="close-share-btn" class="close-btn" aria-label="Close share view">×</button>
+            <h2 id="share-title">Share My Records</h2>
+            <div id="share-image-container"></div>
+            <div class="share-actions">
+                <button id="copy-share-btn" class="btn">📋 Copy Image</button>
+                <button id="download-share-btn" class="btn btn-secondary">📥 Download Image</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</body>
+</html>
