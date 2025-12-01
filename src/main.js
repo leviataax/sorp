@@ -406,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Settings Elements
         sealEnabledCheckbox: document.getElementById('seal-enabled-checkbox'),
        // Pagination
-       paginationControls: document.getElementById('pagination-controls'),
+        paginationControls: document.getElementById('pagination-controls'),
     };
 
     // --- State Management ---
@@ -414,7 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let originalDataUrl = null;
     let processedDataUrl = null;
     let savedResults = [];
-   let currentPage = 1;
+    let currentPage = 1;
     let allApiSettings = {};
     let currentProvider = 'custom';
     let allPrompts = {};
@@ -450,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const presets = {
         openai: { baseUrl: 'https://api.openai.com/v1', models: [] },
         gemini: { baseUrl: 'https://generativelanguage.googleapis.com', models: [] },
-        anthropic: { baseUrl: 'https://api.anthropic.com/v1', models: ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"] },
+        anthropic: { baseUrl: 'https://api.anthropic.com/v1', models: [] },
         openrouter: { baseUrl: 'https://openrouter.ai/api/v1', models: [] },
         siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1', models: [] },
         xai: { baseUrl: 'https://api.x.ai/v1', models: [] },
@@ -620,22 +620,95 @@ document.addEventListener('DOMContentLoaded', () => {
                     processedDataUrl = webpData;
                 })
                 .catch(err => {
+                    // Provide more specific user-facing feedback based on standardized error codes
                     console.error("Image conversion error:", err);
-                    alert("Unable to process this image. Please try another image.");
+                    let userMessage = 'Unable to process this image. Please try another image.';
+
+                    if (err && err.code) {
+                        switch (err.code) {
+                            case 'INVALID_FILE_TYPE':
+                                userMessage = 'The selected file is not a supported image type. Please upload a JPEG, PNG, GIF, or WebP image.';
+                                break;
+                            case 'FILE_TOO_LARGE':
+                                userMessage = err.message || 'The selected file is too large to process.';
+                                break;
+                            case 'FILE_READ_ERROR':
+                                userMessage = 'There was a problem reading the file from your device.';
+                                break;
+                            case 'IMAGE_DECODE_ERROR':
+                                userMessage = 'The image file could not be decoded (it might be corrupt or in an unsupported format).';
+                                break;
+                            case 'INVALID_IMAGE':
+                                userMessage = 'This file does not appear to be a valid image (zero dimensions or corrupt).';
+                                break;
+                            case 'TAINTED_CANVAS':
+                                userMessage = 'The image cannot be converted due to cross-origin / CORS restrictions. Try an image from a different source or ensure the server sends proper CORS headers.';
+                                break;
+                            case 'CONVERSION_FAILED':
+                                userMessage = err.message || 'Conversion to WebP failed.';
+                                break;
+                            default:
+                                userMessage = err.message || userMessage;
+                        }
+                    } else if (err && err.message) {
+                        userMessage = err.message;
+                    }
+
+                    // Surface the helpful message to the user and reset upload view
+                    alert(userMessage);
                     showView('upload');
                 });
         };
         reader.readAsDataURL(file);
     }
 
+    /**
+     * Resize an input File to a maximum dimension and convert to a WebP data URL.
+     * Returns a Promise which resolves with a WebP data URL string.
+     * On failure it rejects with an Error whose `.code` and `message` provide specific reasons.
+     *
+     * Known error codes:
+     *  - NO_FILE: no File was provided
+     *  - INVALID_FILE_TYPE: file is not an image (not image/*)
+     *  - FILE_TOO_LARGE: file exceeds configured MAX_FILE_SIZE
+     *  - FILE_READ_ERROR: FileReader error while reading file
+     *  - IMAGE_DECODE_ERROR: Image failed to decode (corrupt or unsupported)
+     *  - INVALID_IMAGE: image had invalid dimensions (zero / NaN)
+     *  - TAINTED_CANVAS: canvas operations blocked due to cross-origin (CORS) restrictions
+     *  - CONVERSION_FAILED: toDataURL or conversion failed for other reasons
+     */
     async function resizeAndConvertToWebP(file) {
+        // Max canvas edge length when resizing
         const MAX_DIMENSION = 800;
+        // Limit the file size we try to process (in bytes). If this is too small for some cases
+        // it can be increased — but very large files are slow to decode in the browser.
+        const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+
+        function makeErr(code, message) {
+            const err = new Error(message);
+            err.code = code;
+            return err;
+        }
+
         return new Promise((resolve, reject) => {
+            // Basic validation early to give clearer feedback
+            if (!file) return reject(makeErr('NO_FILE', 'No file was provided.'));
+            if (!file.type || !file.type.startsWith('image/')) {
+                return reject(makeErr('INVALID_FILE_TYPE', 'Selected file is not an image. Please select a JPEG, PNG, GIF, or WebP image.'));
+            }
+            if (file.size && file.size > MAX_FILE_SIZE) {
+                return reject(makeErr('FILE_TOO_LARGE', `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum supported size is ${(MAX_FILE_SIZE / 1024 / 1024).toFixed(0)} MB.`));
+            }
+
             const reader = new FileReader();
             reader.onload = (event) => {
                 const img = new Image();
                 img.onload = () => {
                     let { width, height } = img;
+                    // Basic sanity check after decoding
+                    if (!width || !height || isNaN(width) || isNaN(height)) {
+                        return reject(makeErr('INVALID_IMAGE', 'The file could not be decoded as a valid image (zero dimensions or corrupted).'));
+                    }
                     if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
                         if (width > height) {
                             height = Math.round(height * (MAX_DIMENSION / width));
@@ -654,13 +727,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         const webpDataUrl = canvas.toDataURL('image/webp', 0.8);
                         resolve(webpDataUrl);
                     } catch (e) {
-                        reject(new Error(`Failed to convert to WebP: ${e.message}`));
+                        // toDataURL can fail for security (tainted) or other reasons.
+                        if (e && e.name === 'SecurityError') {
+                            return reject(makeErr('TAINTED_CANVAS', 'Unable to convert image because the canvas is tainted (cross-origin or read permission issue). Try a different image or ensure proper CORS headers.'));
+                        }
+                        return reject(makeErr('CONVERSION_FAILED', `Failed to convert to WebP: ${e && e.message ? e.message : String(e)}`));
                     }
                 };
-                img.onerror = (err) => reject(new Error(`Image loading failed: ${err}`));
+                img.onerror = (err) => reject(makeErr('IMAGE_DECODE_ERROR', 'Image loading/decoding failed — file may be corrupt or in an unsupported format.'));
                 img.src = event.target.result;
             };
-            reader.onerror = (err) => reject(new Error(`File reading failed: ${err}`));
+            reader.onerror = (err) => reject(makeErr('FILE_READ_ERROR', 'Failed to read the file from disk (FileReader error).'));
             reader.readAsDataURL(file);
         });
     }
@@ -812,111 +889,111 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSavedResults() {
-       const searchTerm = elements.searchSavedInput.value.toLowerCase();
-       const filterValue = elements.filterSavedSelect.value;
+        const searchTerm = elements.searchSavedInput.value.toLowerCase();
+        const filterValue = elements.filterSavedSelect.value;
 
-       const filteredResults = savedResults.filter(res => {
-           const matchesSearch = (res.explanation || '').toLowerCase().includes(searchTerm);
-           const terms = getVerdictTerms(res.promptSet || 'Original', res.aiType || 'brief', allPrompts);
-           const isPositive = res.verdict === terms.positive;
-           const isNegative = res.verdict === terms.negative;
-           const matchesFilter = filterValue === 'all' || (filterValue === 'SMASH' && isPositive) || (filterValue === 'PASS' && isNegative);
-           return matchesSearch && matchesFilter;
-       });
+        const filteredResults = savedResults.filter(res => {
+            const matchesSearch = (res.explanation || '').toLowerCase().includes(searchTerm);
+            const terms = getVerdictTerms(res.promptSet || 'Original', res.aiType || 'brief', allPrompts);
+            const isPositive = res.verdict === terms.positive;
+            const isNegative = res.verdict === terms.negative;
+            const matchesFilter = filterValue === 'all' || (filterValue === 'SMASH' && isPositive) || (filterValue === 'PASS' && isNegative);
+            return matchesSearch && matchesFilter;
+        });
 
-       const itemsPerPage = window.innerWidth <= 768 ? 1 : 6;
-       const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
-       
+        const itemsPerPage = window.innerWidth <= 768 ? 1 : 6;
+        const totalPages = Math.ceil(filteredResults.length / itemsPerPage);
+        
        // Ensure currentPage is valid
-       if (currentPage > totalPages) {
-           currentPage = totalPages;
-       }
-       if (currentPage < 1) {
-           currentPage = 1;
-       }
+        if (currentPage > totalPages) {
+            currentPage = totalPages;
+        }
+        if (currentPage < 1) {
+            currentPage = 1;
+        }
 
        const startIndex = (currentPage - 1) * itemsPerPage;
-       const endIndex = startIndex + itemsPerPage;
-       const paginatedItems = filteredResults.slice(startIndex, endIndex);
+        const endIndex = startIndex + itemsPerPage;
+        const paginatedItems = filteredResults.slice(startIndex, endIndex);
 
-       elements.savedResultsGrid.innerHTML = '';
-       if (paginatedItems.length === 0) {
-           elements.savedResultsGrid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center;">No matching records found.</p>';
+        elements.savedResultsGrid.innerHTML = '';
+        if (paginatedItems.length === 0) {
+            elements.savedResultsGrid.innerHTML = '<p style="grid-column: 1 / -1; text-align: center;">No matching records found.</p>';
            renderPagination(0, 0, 0); // Clear pagination
-           return;
-       }
+            return;
+        }
 
-       paginatedItems.forEach(res => {
-           const card = document.createElement('div');
-           card.className = 'saved-result-card';
+        paginatedItems.forEach(res => {
+            const card = document.createElement('div');
+            card.className = 'saved-result-card';
 
-           const terms = getVerdictTerms(res.promptSet || 'Original', res.aiType || 'brief', allPrompts);
-           let icon = '🤔';
-           if (res.verdict === terms.positive) icon = '🥵';
-           else if (res.verdict === terms.negative) icon = '🥶';
+            const terms = getVerdictTerms(res.promptSet || 'Original', res.aiType || 'brief', allPrompts);
+            let icon = '🤔';
+            if (res.verdict === terms.positive) icon = '🥵';
+            else if (res.verdict === terms.negative) icon = '🥶';
 
-           card.innerHTML = `
-               <img src="${res.image}" alt="Saved result" loading="lazy">
-               <div class="saved-result-info">
-                   <p class="verdict">${getRatingLabel(res.rating)} (${res.rating}/10) ${res.verdict} ${icon}</p>
-                   <p class="date">${new Date(res.timestamp).toLocaleString()}</p>
-                   <button class="delete-btn">🗑️ Delete</button>
-               </div>
-           `;
-           card.addEventListener('click', (e) => {
-               if (e.target.classList.contains('delete-btn')) {
-                   e.stopPropagation();
-                   // Find the index in the original array to correctly delete
-                   const originalIndex = savedResults.findIndex(item => item.timestamp === res.timestamp);
-                   if (originalIndex > -1) {
-                       savedResults.splice(originalIndex, 1);
-                       localStorage.setItem('smashOrPassResults', JSON.stringify(savedResults));
+            card.innerHTML = `
+                <img src="${res.image}" alt="Saved result" loading="lazy">
+                <div class="saved-result-info">
+                    <p class="verdict">${getRatingLabel(res.rating)} (${res.rating}/10) ${res.verdict} ${icon}</p>
+                    <p class="date">${new Date(res.timestamp).toLocaleString()}</p>
+                    <button class="delete-btn">🗑️ Delete</button>
+                </div>
+            `;
+            card.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete-btn')) {
+                    e.stopPropagation();
+                  // Find the index in the original array to correctly delete
+                    const originalIndex = savedResults.findIndex(item => item.timestamp === res.timestamp);
+                    if (originalIndex > -1) {
+                        savedResults.splice(originalIndex, 1);
+                        localStorage.setItem('smashOrPassResults', JSON.stringify(savedResults));
                        renderSavedResults(); // Re-render the current page
-                   }
-               } else {
-                   showPopup(res);
-               }
-           });
-           elements.savedResultsGrid.appendChild(card);
-       });
+                    }
+                } else {
+                    showPopup(res);
+                }
+            });
+            elements.savedResultsGrid.appendChild(card);
+        });
 
-       renderPagination(totalPages, filteredResults.length, itemsPerPage);
-   }
+        renderPagination(totalPages, filteredResults.length, itemsPerPage);
+    }
 
-   function renderPagination(totalPages, totalItems, itemsPerPage) {
-       elements.paginationControls.innerHTML = '';
-       if (totalPages <= 1) return;
+    function renderPagination(totalPages, totalItems, itemsPerPage) {
+        elements.paginationControls.innerHTML = '';
+        if (totalPages <= 1) return;
 
-       const prevBtn = document.createElement('button');
-       prevBtn.innerHTML = 'Previous Page';
-       prevBtn.className = 'btn btn-secondary';
-       prevBtn.disabled = currentPage === 1;
-       prevBtn.addEventListener('click', () => {
-           if (currentPage > 1) {
-               currentPage--;
-               renderSavedResults();
-           }
-       });
+        const prevBtn = document.createElement('button');
+        prevBtn.innerHTML = 'Previous Page';
+        prevBtn.className = 'btn btn-secondary';
+        prevBtn.disabled = currentPage === 1;
+        prevBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderSavedResults();
+            }
+        });
 
-       const pageInfo = document.createElement('span');
-       pageInfo.className = 'page-info';
-       pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        const pageInfo = document.createElement('span');
+        pageInfo.className = 'page-info';
+        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
 
-       const nextBtn = document.createElement('button');
-       nextBtn.innerHTML = 'Next Page';
-       nextBtn.className = 'btn btn-secondary';
-       nextBtn.disabled = currentPage === totalPages;
-       nextBtn.addEventListener('click', () => {
-           if (currentPage < totalPages) {
-               currentPage++;
-               renderSavedResults();
-           }
-       });
+        const nextBtn = document.createElement('button');
+        nextBtn.innerHTML = 'Next Page';
+        nextBtn.className = 'btn btn-secondary';
+        nextBtn.disabled = currentPage === totalPages;
+        nextBtn.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderSavedResults();
+            }
+        });
 
-       elements.paginationControls.appendChild(prevBtn);
-       elements.paginationControls.appendChild(pageInfo);
-       elements.paginationControls.appendChild(nextBtn);
-   }
+        elements.paginationControls.appendChild(prevBtn);
+        elements.paginationControls.appendChild(pageInfo);
+        elements.paginationControls.appendChild(nextBtn);
+    }
 
     function showPopup(result) {
         elements.popupImg.src = result.image;
@@ -1265,11 +1342,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         elements.searchSavedInput.addEventListener('input', () => {
            currentPage = 1; // Reset to first page on search
-           renderSavedResults();
+            renderSavedResults();
         });
         elements.filterSavedSelect.addEventListener('change', () => {
            currentPage = 1; // Reset to first page on filter change
-           renderSavedResults();
+            renderSavedResults();
         });
 
         // API Settings Listeners
