@@ -620,8 +620,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     processedDataUrl = webpData;
                 })
                 .catch(err => {
-                    console.error("Image conversion error:", err.message);
-                    alert("Unable to process this image: "+ err.message + "\nPlease try another image.");
+                    console.error("Image conversion error:", err);
+                    alert("Unable to process this image. Please try another image.");
                     showView('upload');
                 });
         };
